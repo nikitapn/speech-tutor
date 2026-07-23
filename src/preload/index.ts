@@ -15,6 +15,7 @@ const api = {
     ipcRenderer.invoke('turn:submit', audio),
   getHistory: (limit?: number): Promise<TurnRecord[]> => ipcRenderer.invoke('history:get', limit),
   getStats: (): Promise<SessionStats> => ipcRenderer.invoke('stats:get'),
+  deleteTurn: (id: number): Promise<void> => ipcRenderer.invoke('turn:delete', id),
 
   examStart: (): Promise<{ sessionId: number; script: ExamScript }> =>
     ipcRenderer.invoke('exam:start'),
@@ -33,7 +34,8 @@ const api = {
   ): Promise<ExamReportRecord> =>
     ipcRenderer.invoke('exam:finish', sessionId, qaPairs, representativeAudio),
   examHistory: (limit?: number): Promise<ExamHistoryEntry[]> =>
-    ipcRenderer.invoke('exam:history', limit)
+    ipcRenderer.invoke('exam:history', limit),
+  deleteExamSession: (id: number): Promise<void> => ipcRenderer.invoke('exam:delete', id)
 }
 
 contextBridge.exposeInMainWorld('api', api)

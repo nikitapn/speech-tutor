@@ -2,6 +2,8 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import {
   createExamSession,
+  deleteExamSession,
+  deleteTurn,
   getExamHistory,
   getHistory,
   getOrCreateActiveSession,
@@ -73,6 +75,10 @@ function registerIpcHandlers(): void {
     return getStats()
   })
 
+  ipcMain.handle('turn:delete', async (_event, id: number) => {
+    deleteTurn(id)
+  })
+
   ipcMain.handle('exam:start', async (): Promise<{ sessionId: number; script: ExamScript }> => {
     const script = await generateExamScript()
     const sessionId = createExamSession(script)
@@ -111,6 +117,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('exam:history', async (_event, limit?: number) => {
     return getExamHistory(limit)
+  })
+
+  ipcMain.handle('exam:delete', async (_event, id: number) => {
+    deleteExamSession(id)
   })
 }
 

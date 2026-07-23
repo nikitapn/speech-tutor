@@ -32,7 +32,9 @@ export default function App() {
 
       <main>
         {tab === 'practice' && <Practice />}
-        {tab === 'exam' && <Exam />}
+        <div style={{ display: tab === 'exam' ? 'block' : 'none' }}>
+          <Exam />
+        </div>
         {tab === 'history' && <History />}
         {tab === 'progress' && <Progress />}
         {tab === 'settings' && <Settings />}

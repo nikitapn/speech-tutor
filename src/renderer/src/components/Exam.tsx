@@ -141,6 +141,18 @@ export default function Exam() {
     setError(null)
   }
 
+  async function handleCancel(): Promise<void> {
+    if (recorderStatus === 'recording') {
+      try {
+        await stop()
+      } catch {
+        // discarding this recording anyway
+      }
+      finish()
+    }
+    handleRestart()
+  }
+
   return (
     <div className="screen">
       <h1>IELTS Speaking Practice (Part 1)</h1>
@@ -161,9 +173,14 @@ export default function Exam() {
 
       {(phase === 'question' || phase === 'submitting') && currentQuestion && (
         <>
-          <p className="exam-progress">
-            Question {currentIndex + 1} of {questions.length}
-          </p>
+          <div className="exam-header-row">
+            <p className="exam-progress">
+              Question {currentIndex + 1} of {questions.length}
+            </p>
+            <button className="button-secondary" onClick={handleCancel}>
+              Cancel exam
+            </button>
+          </div>
 
           {showIntro && <p className="exam-intro">{currentQuestion.intro}</p>}
 

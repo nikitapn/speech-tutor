@@ -136,6 +136,14 @@ export function getHistory(limit = 50): TurnRecord[] {
     .all(limit) as TurnRecord[]
 }
 
+export function deleteTurn(id: number): void {
+  const tx = db.transaction((turnId: number) => {
+    db.prepare('DELETE FROM error_tags WHERE turn_id = ?').run(turnId)
+    db.prepare('DELETE FROM turns WHERE id = ?').run(turnId)
+  })
+  tx(id)
+}
+
 export function getStats(): SessionStats {
   const totals = db
     .prepare(
@@ -229,4 +237,13 @@ export function getExamHistory(limit = 20): ExamHistoryEntry[] {
     turns: turnsStmt.all(session.id) as ExamTurnRecord[],
     report: (reportStmt.get(session.id) as ExamReportRecord | undefined) ?? null
   }))
+}
+
+export function deleteExamSession(id: number): void {
+  const tx = db.transaction((sessionId: number) => {
+    db.prepare('DELETE FROM exam_turns WHERE exam_session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM exam_reports WHERE exam_session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM exam_sessions WHERE id = ?').run(sessionId)
+  })
+  tx(id)
 }
