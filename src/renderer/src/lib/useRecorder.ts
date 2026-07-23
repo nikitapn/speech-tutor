@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { getStoredDeviceId } from './audioDevices'
+import { trimSilence } from './trimSilence'
 import { encodeWav } from './wav'
 
 export type RecorderStatus = 'idle' | 'recording' | 'processing'
@@ -96,7 +97,8 @@ export function useRecorder(): {
       offset += chunk.length
     }
 
-    return encodeWav(merged, sampleRate)
+    const trimmed = trimSilence(merged, sampleRate)
+    return encodeWav(trimmed, sampleRate)
   }, [])
 
   const finish = useCallback(() => setStatus('idle'), [])
