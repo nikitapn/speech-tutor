@@ -13,7 +13,13 @@ import {
   saveExamTurn,
   saveTurn
 } from './db'
-import { generateExamScript, scoreExamSession, transcribeAndScore, transcribeOnly } from './ollama'
+import {
+  generateExamScript,
+  generatePart3Question,
+  scoreExamSession,
+  transcribeAndScore,
+  transcribeOnly
+} from './ollama'
 import type {
   ExamQaPair,
   ExamReportRecord,
@@ -117,6 +123,17 @@ function registerIpcHandlers(): void {
       transcript: string
     ): Promise<ExamTurnRecord> => {
       return saveExamTurn(sessionId, seq, topic, question, transcript)
+    }
+  )
+
+  ipcMain.handle(
+    'exam:generatePart3Question',
+    async (
+      _event,
+      part2Topic: string,
+      history: { question: string; transcript: string }[]
+    ): Promise<string> => {
+      return generatePart3Question(part2Topic, history)
     }
   )
 

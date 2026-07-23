@@ -19,6 +19,10 @@ type Phase =
   | 'part2-finishing'
   | 'part2-question'
   | 'part2-submitting'
+  | 'part3-intro'
+  | 'part3-loading-question'
+  | 'part3-question'
+  | 'part3-submitting'
   | 'scoring'
   | 'report'
 
@@ -35,6 +39,7 @@ interface PendingChunk {
 }
 
 const PART2_PREP_SECONDS = 60
+const PART3_QUESTION_COUNT = 6
 
 function flattenScript(script: ExamScript): ExamQuestionRef[] {
   const flat: ExamQuestionRef[] = []
@@ -85,6 +90,10 @@ export default function Exam() {
   const [roundingOffIndex, setRoundingOffIndex] = useState(0)
   const [roundingOffAnswers, setRoundingOffAnswers] = useState<Answer[]>([])
 
+  const [currentPart3Question, setCurrentPart3Question] = useState<string | null>(null)
+  const [part3QuestionIndex, setPart3QuestionIndex] = useState(0)
+  const [part3Answers, setPart3Answers] = useState<Answer[]>([])
+
   const currentQuestion = questions[currentIndex]
   const showIntro = currentQuestion?.questionIndex === 0
   const roundingOffQuestion = script?.part2.roundingOffQuestions[roundingOffIndex]
@@ -94,6 +103,7 @@ export default function Exam() {
     if (phase === 'question') handleRecordClick()
     else if (phase === 'part2-speaking') handleChunkButtonClick()
     else if (phase === 'part2-question') handleRoundingOffClick()
+    else if (phase === 'part3-question') handlePart3Click()
     // eslint: handlers close over current state each render, safe to call directly here
   }, [secondsRemaining, recorderStatus, phase])
 
@@ -123,6 +133,9 @@ export default function Exam() {
       setPart2LongTurnAnswer(null)
       setRoundingOffIndex(0)
       setRoundingOffAnswers([])
+      setCurrentPart3Question(null)
+      setPart3QuestionIndex(0)
+      setPart3Answers([])
       setPhase('question')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the exam.')
@@ -284,7 +297,7 @@ export default function Exam() {
           setRoundingOffIndex(roundingOffIndex + 1)
           setPhase('part2-question')
         } else {
-          await finishExam(nextRoundingOff)
+          setPhase('part3-intro')
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong submitting your answer.')
@@ -295,11 +308,72 @@ export default function Exam() {
     }
   }
 
-  async function finishExam(finalRoundingOffAnswers: Answer[]): Promise<void> {
+  async function startPart3(): Promise<void> {
+    if (!script) return
+    setError(null)
+    setPhase('part3-loading-question')
+    try {
+      const question = await window.api.examGeneratePart3Question(script.part2.topic, [])
+      setCurrentPart3Question(question)
+      setPart3QuestionIndex(0)
+      setPart3Answers([])
+      setPhase('part3-question')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not prepare the next question.')
+      setPhase('part3-intro')
+    }
+  }
+
+  async function handlePart3Click(): Promise<void> {
+    setError(null)
+    if (recorderStatus === 'idle') {
+      try {
+        await start()
+      } catch {
+        setError('Could not access the microphone. Check permissions and try again.')
+      }
+      return
+    }
+
+    if (recorderStatus === 'recording' && sessionId !== null && script && currentPart3Question) {
+      setPhase('part3-submitting')
+      try {
+        const audio = await stop()
+        const seq = questions.length + 4 + part3QuestionIndex
+        const turn = await window.api.examSubmitAnswer(sessionId, seq, 'Discussion', currentPart3Question, audio)
+
+        const nextAnswers = [
+          ...part3Answers,
+          { topic: 'Discussion', question: currentPart3Question, transcript: turn.transcript, audio }
+        ]
+        setPart3Answers(nextAnswers)
+
+        if (part3QuestionIndex + 1 < PART3_QUESTION_COUNT) {
+          setPhase('part3-loading-question')
+          const nextQuestion = await window.api.examGeneratePart3Question(
+            script.part2.topic,
+            nextAnswers.map((a) => ({ question: a.question, transcript: a.transcript }))
+          )
+          setCurrentPart3Question(nextQuestion)
+          setPart3QuestionIndex(part3QuestionIndex + 1)
+          setPhase('part3-question')
+        } else {
+          await finishExam(nextAnswers)
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Something went wrong submitting your answer.')
+        setPhase('part3-question')
+      } finally {
+        finish()
+      }
+    }
+  }
+
+  async function finishExam(finalPart3Answers: Answer[]): Promise<void> {
     if (sessionId === null || !part2LongTurnAnswer) return
     setPhase('scoring')
     try {
-      const allAnswers = [...answers, part2LongTurnAnswer, ...finalRoundingOffAnswers]
+      const allAnswers = [...answers, part2LongTurnAnswer, ...roundingOffAnswers, ...finalPart3Answers]
       const representative = allAnswers.reduce((longest, a) =>
         a.transcript.length > longest.transcript.length ? a : longest
       )
@@ -331,6 +405,9 @@ export default function Exam() {
     setPart2LongTurnAnswer(null)
     setRoundingOffIndex(0)
     setRoundingOffAnswers([])
+    setCurrentPart3Question(null)
+    setPart3QuestionIndex(0)
+    setPart3Answers([])
   }
 
   async function handleCancel(): Promise<void> {
@@ -347,16 +424,41 @@ export default function Exam() {
 
   const inProgress = phase !== 'idle' && phase !== 'loading-script' && phase !== 'scoring' && phase !== 'report'
 
+  function progressLabel(): string {
+    switch (phase) {
+      case 'question':
+      case 'submitting':
+        return `Question ${currentIndex + 1} of ${questions.length}`
+      case 'part2-prep':
+        return 'Part 2 - Prepare your answer'
+      case 'part2-speaking':
+      case 'part2-finishing':
+        return `Part 2 - Long turn (${chunkCount} chunk${chunkCount === 1 ? '' : 's'} recorded)`
+      case 'part2-question':
+      case 'part2-submitting':
+        return `Part 2 - Rounding-off question ${roundingOffIndex + 1} of ${script?.part2.roundingOffQuestions.length ?? 2}`
+      case 'part3-intro':
+        return 'Part 3 - Discussion'
+      case 'part3-loading-question':
+      case 'part3-question':
+      case 'part3-submitting':
+        return `Part 3 - Discussion question ${part3QuestionIndex + 1} of ${PART3_QUESTION_COUNT}`
+      default:
+        return ''
+    }
+  }
+
   return (
     <div className="screen">
-      <h1>IELTS Speaking Practice (Part 1 &amp; 2)</h1>
+      <h1>IELTS Speaking Practice (Part 1, 2 &amp; 3)</h1>
 
       {phase === 'idle' && (
         <>
           <p className="hint">
-            A mock IELTS interview - Part 1 (2 topics, 4 questions each), then Part 2 (a one-minute
-            prep, a long turn on a task card, and 2 rounding-off questions). Get a full IELTS-style
-            report at the end.
+            A mock IELTS interview - Part 1 (2 topics, 4 questions each), Part 2 (a one-minute
+            prep, a long turn on a task card, and 2 rounding-off questions), then Part 3 (a
+            two-way discussion that builds on your Part 2 topic). Get a full IELTS-style report
+            at the end.
           </p>
           <button className="record-button" onClick={handleStart}>
             Start mock exam
@@ -368,15 +470,7 @@ export default function Exam() {
 
       {inProgress && (
         <div className="exam-header-row">
-          <p className="exam-progress">
-            {phase === 'question' || phase === 'submitting'
-              ? `Question ${currentIndex + 1} of ${questions.length}`
-              : phase === 'part2-prep'
-                ? 'Part 2 - Prepare your answer'
-                : phase === 'part2-speaking' || phase === 'part2-finishing'
-                  ? `Part 2 - Long turn (${chunkCount} chunk${chunkCount === 1 ? '' : 's'} recorded)`
-                  : `Part 2 - Rounding-off question ${roundingOffIndex + 1} of ${script?.part2.roundingOffQuestions.length ?? 2}`}
-          </p>
+          <p className="exam-progress">{progressLabel()}</p>
           <button className="button-secondary" onClick={handleCancel}>
             Cancel exam
           </button>
@@ -446,13 +540,50 @@ export default function Exam() {
         </>
       )}
 
+      {phase === 'part3-intro' && (
+        <>
+          <p className="exam-intro">
+            Now let's move on to a wider discussion related to your Part 2 topic.
+          </p>
+          <button className="record-button" onClick={startPart3}>
+            Continue
+          </button>
+        </>
+      )}
+
+      {phase === 'part3-loading-question' && <p className="hint">Preparing the next question...</p>}
+
+      {(phase === 'part3-question' || phase === 'part3-submitting') && currentPart3Question && (
+        <>
+          <p className="exam-question">{currentPart3Question}</p>
+
+          <button
+            className={`record-button ${recorderStatus} ${secondsRemaining !== null && secondsRemaining <= 5 ? 'low-time' : ''}`}
+            onClick={handlePart3Click}
+            disabled={phase === 'part3-submitting'}
+          >
+            {recorderStatus === 'idle' && phase === 'part3-question' && 'Hold to speak'}
+            {recorderStatus === 'recording' && `Recording... click to stop (${secondsRemaining}s left)`}
+            {phase === 'part3-submitting' && 'Thinking...'}
+          </button>
+        </>
+      )}
+
       {phase === 'scoring' && <p className="hint">Interview complete - preparing your report...</p>}
 
       {error && <p className="error">{error}</p>}
 
       {phase === 'report' && report && (
         <>
-          <ExamReportView report={report} turns={[...answers, ...(part2LongTurnAnswer ? [part2LongTurnAnswer] : []), ...roundingOffAnswers]} />
+          <ExamReportView
+            report={report}
+            turns={[
+              ...answers,
+              ...(part2LongTurnAnswer ? [part2LongTurnAnswer] : []),
+              ...roundingOffAnswers,
+              ...part3Answers
+            ]}
+          />
           <button className="button-secondary" onClick={handleRestart}>
             Start another mock exam
           </button>

@@ -100,10 +100,25 @@ async function chatCompletion(content: string | ContentPart[]): Promise<string> 
   return data.choices[0]?.message.content ?? ''
 }
 
+/**
+ * The model occasionally appends stray artifacts after an otherwise valid JSON object (observed:
+ * a trailing "<tool_call|>" token - gemma4 has a tool-calling capability, and something leaks
+ * through even though this endpoint has no tools defined). Fall back to the substring between the
+ * first '{' and the last '}' before giving up, rather than failing the whole turn over that.
+ */
 function parseJson<T>(content: string, label: string): T {
   try {
     return JSON.parse(content) as T
   } catch {
+    const start = content.indexOf('{')
+    const end = content.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(content.slice(start, end + 1)) as T
+      } catch {
+        // fall through to the error below
+      }
+    }
     throw new Error(`${label}: model did not return valid JSON: ${content.slice(0, 500)}`)
   }
 }
@@ -146,6 +161,51 @@ export async function transcribeOnly(audioBuffer: Buffer): Promise<string> {
   return parsed.transcript ?? ''
 }
 
+/**
+ * Part 3 ("Two-way discussion") is adaptive - a real examiner's next question responds to what the
+ * candidate just said, rather than following a fixed list. This is called once before the first
+ * Part 3 question (with an empty history, seeded only by the Part 2 topic) and again after every
+ * subsequent answer, each time with the growing conversation so far. Text-only - no audio needed,
+ * since deciding the next question only depends on what was said, not how it sounded.
+ */
+export async function generatePart3Question(
+  part2Topic: string,
+  history: { question: string; transcript: string }[]
+): Promise<string> {
+  const historyBlock =
+    history.length === 0
+      ? ''
+      : `\n\nThe discussion so far:\n${history.map((h) => `Examiner: ${h.question}\nCandidate: ${h.transcript}`).join('\n\n')}`
+
+  const instruction =
+    history.length === 0
+      ? `This is the opening question of Part 3. Ask one broader, more abstract question that builds
+on the Part 2 topic (not the transition sentence itself - just the question).`
+      : `Ask ONE natural follow-up question that responds directly to what the candidate just said -
+probe deeper, ask them to elaborate or justify their view, gently challenge it, or pivot to a
+related abstract angle. Match the analytical, discursive style of real IELTS Part 3 (discussing
+issues, speculating, analysing - not simple factual recall).`
+
+  const prompt = `You are an IELTS Speaking examiner conducting Part 3 (the "Two-way discussion"
+section), which follows on from the Part 2 topic in a more general, abstract, and in-depth way.
+
+The Part 2 topic was: "${part2Topic}"
+${historyBlock}
+
+${instruction}
+
+Respond with ONLY a JSON object, no markdown fences, no commentary: { "question": string }`
+
+  const content = await chatCompletion(prompt)
+  const parsed = parseJson<{ question?: string }>(content, 'generatePart3Question')
+
+  if (!parsed.question) {
+    throw new Error('generatePart3Question: model did not return a question')
+  }
+
+  return parsed.question
+}
+
 export async function generateExamScript(): Promise<ExamScript> {
   const content = await chatCompletion(EXAM_SCRIPT_PROMPT)
   const parsed = parseJson<ExamScript>(content, 'generateExamScript')
@@ -175,9 +235,10 @@ export async function scoreExamSession(
     .join('\n\n')
 
   const prompt = `You are an IELTS Speaking examiner. Below is the full transcript of a Speaking
-test session between an examiner and a candidate, covering Part 1 (introduction and interview) and
-Part 2 (individual long turn plus rounding-off questions). Score the candidate's overall
-performance using the official IELTS Speaking band descriptors, across these four criteria:
+test session between an examiner and a candidate, covering Part 1 (introduction and interview),
+Part 2 (individual long turn plus rounding-off questions), and Part 3 (two-way discussion). Score
+the candidate's overall performance using the official IELTS Speaking band descriptors, across
+these four criteria:
 - Fluency and coherence
 - Lexical resource
 - Grammatical range and accuracy

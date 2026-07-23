@@ -37,6 +37,10 @@ const api = {
     transcript: string
   ): Promise<ExamTurnRecord> =>
     ipcRenderer.invoke('exam:saveTurn', sessionId, seq, topic, question, transcript),
+  examGeneratePart3Question: (
+    part2Topic: string,
+    history: { question: string; transcript: string }[]
+  ): Promise<string> => ipcRenderer.invoke('exam:generatePart3Question', part2Topic, history),
   examFinish: (
     sessionId: number,
     qaPairs: ExamQaPair[],
