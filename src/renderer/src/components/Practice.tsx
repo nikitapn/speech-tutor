@@ -3,7 +3,7 @@ import type { SubmitTurnResult } from '../../../shared/types'
 import { useRecorder } from '../lib/useRecorder'
 
 export default function Practice() {
-  const { status, start, stop, finish } = useRecorder()
+  const { status, secondsRemaining, start, stop, finish } = useRecorder()
   const [result, setResult] = useState<SubmitTurnResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -14,6 +14,12 @@ export default function Practice() {
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (status === 'recording' && secondsRemaining === 0) {
+      handleRecordClick()
+    }
+  }, [secondsRemaining, status])
 
   async function handleRecordClick(): Promise<void> {
     setError(null)
@@ -49,12 +55,12 @@ export default function Practice() {
     <div className="screen">
       <h1>Practice</h1>
       <button
-        className={`record-button ${status}`}
+        className={`record-button ${status} ${secondsRemaining !== null && secondsRemaining <= 5 ? 'low-time' : ''}`}
         onClick={handleRecordClick}
         disabled={status === 'processing'}
       >
         {status === 'idle' && 'Hold to speak'}
-        {status === 'recording' && 'Recording... click to stop'}
+        {status === 'recording' && `Recording... click to stop (${secondsRemaining}s left)`}
         {status === 'processing' && 'Thinking...'}
       </button>
 

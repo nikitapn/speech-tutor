@@ -1,7 +1,18 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'node:path'
-import type { GrammarError, SessionStats, TurnRecord, TutorFeedback } from '../shared/types'
+import type {
+  ExamHistoryEntry,
+  ExamReport,
+  ExamReportRecord,
+  ExamScript,
+  ExamSessionRecord,
+  ExamTurnRecord,
+  GrammarError,
+  SessionStats,
+  TurnRecord,
+  TutorFeedback
+} from '../shared/types'
 
 let db: Database.Database
 
@@ -35,6 +46,34 @@ export function initDb(): void {
       turn_id INTEGER NOT NULL REFERENCES turns(id),
       category TEXT NOT NULL,
       detail TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS exam_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      script_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS exam_turns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exam_session_id INTEGER NOT NULL REFERENCES exam_sessions(id),
+      seq INTEGER NOT NULL,
+      topic TEXT NOT NULL,
+      question TEXT NOT NULL,
+      transcript TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS exam_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exam_session_id INTEGER NOT NULL REFERENCES exam_sessions(id),
+      fluency_coherence TEXT NOT NULL,
+      lexical_resource TEXT NOT NULL,
+      grammatical_range_accuracy TEXT NOT NULL,
+      pronunciation TEXT NOT NULL,
+      band_estimate REAL NOT NULL,
+      summary TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `)
 
@@ -129,4 +168,65 @@ export function getStats(): SessionStats {
     .all() as { type: string; count: number }[]
 
   return { ...totals, scoreHistory, topErrorCategories }
+}
+
+export function createExamSession(script: ExamScript): number {
+  const result = db
+    .prepare('INSERT INTO exam_sessions (script_json) VALUES (?)')
+    .run(JSON.stringify(script))
+  return Number(result.lastInsertRowid)
+}
+
+export function saveExamTurn(
+  examSessionId: number,
+  seq: number,
+  topic: string,
+  question: string,
+  transcript: string
+): ExamTurnRecord {
+  const result = db
+    .prepare(
+      `INSERT INTO exam_turns (exam_session_id, seq, topic, question, transcript)
+       VALUES (@exam_session_id, @seq, @topic, @question, @transcript)`
+    )
+    .run({ exam_session_id: examSessionId, seq, topic, question, transcript })
+
+  return db.prepare('SELECT * FROM exam_turns WHERE id = ?').get(Number(result.lastInsertRowid)) as ExamTurnRecord
+}
+
+export function saveExamReport(examSessionId: number, report: ExamReport): ExamReportRecord {
+  const result = db
+    .prepare(
+      `INSERT INTO exam_reports
+        (exam_session_id, fluency_coherence, lexical_resource, grammatical_range_accuracy, pronunciation, band_estimate, summary)
+       VALUES (@exam_session_id, @fluency_coherence, @lexical_resource, @grammatical_range_accuracy, @pronunciation, @band_estimate, @summary)`
+    )
+    .run({
+      exam_session_id: examSessionId,
+      fluency_coherence: report.fluency_coherence,
+      lexical_resource: report.lexical_resource,
+      grammatical_range_accuracy: report.grammatical_range_accuracy,
+      pronunciation: report.pronunciation,
+      band_estimate: report.band_estimate,
+      summary: report.summary
+    })
+
+  return db
+    .prepare('SELECT * FROM exam_reports WHERE id = ?')
+    .get(Number(result.lastInsertRowid)) as ExamReportRecord
+}
+
+export function getExamHistory(limit = 20): ExamHistoryEntry[] {
+  const sessions = db
+    .prepare('SELECT * FROM exam_sessions ORDER BY id DESC LIMIT ?')
+    .all(limit) as ExamSessionRecord[]
+
+  const turnsStmt = db.prepare('SELECT * FROM exam_turns WHERE exam_session_id = ? ORDER BY seq ASC')
+  const reportStmt = db.prepare('SELECT * FROM exam_reports WHERE exam_session_id = ?')
+
+  return sessions.map((session) => ({
+    session,
+    turns: turnsStmt.all(session.id) as ExamTurnRecord[],
+    report: (reportStmt.get(session.id) as ExamReportRecord | undefined) ?? null
+  }))
 }

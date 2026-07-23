@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getStoredDeviceId } from './audioDevices'
 import { trimSilence } from './trimSilence'
 import { encodeWav } from './wav'
@@ -7,19 +7,34 @@ export type RecorderStatus = 'idle' | 'recording' | 'processing'
 
 const SAMPLE_RATE = 16000
 
+// Ollama silently truncates audio beyond roughly this length instead of erroring (confirmed: an
+// ~80s clip only transcribed its first ~30s, with no error and a suspiciously fast response) - the
+// countdown gives a hard visual cue to wrap up, and stop() is auto-triggered at 0 as a backstop.
+const RECORDING_LIMIT_SECONDS = 30
+
 export function useRecorder(): {
   status: RecorderStatus
+  secondsRemaining: number | null
   start: () => Promise<void>
   stop: () => Promise<ArrayBuffer>
   finish: () => void
 } {
   const [status, setStatus] = useState<RecorderStatus>('idle')
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const silentGainRef = useRef<GainNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Float32Array[]>([])
+  const isRecordingRef = useRef(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [])
 
   const start = useCallback(async () => {
     // Chromium enables WebRTC-style echo cancellation/auto-gain/noise-suppression by default for
@@ -71,10 +86,27 @@ export function useRecorder(): {
     source.connect(processor)
     processor.connect(silentGain)
     silentGain.connect(audioContext.destination)
+
+    isRecordingRef.current = true
     setStatus('recording')
+    setSecondsRemaining(RECORDING_LIMIT_SECONDS)
+    timerRef.current = setInterval(() => {
+      setSecondsRemaining((prev) => (prev !== null ? Math.max(0, prev - 1) : prev))
+    }, 1000)
   }, [])
 
   const stop = useCallback(async (): Promise<ArrayBuffer> => {
+    if (!isRecordingRef.current) {
+      throw new Error('Not currently recording')
+    }
+    isRecordingRef.current = false
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    setSecondsRemaining(null)
+
     processorRef.current?.disconnect()
     silentGainRef.current?.disconnect()
     sourceRef.current?.disconnect()
@@ -103,5 +135,5 @@ export function useRecorder(): {
 
   const finish = useCallback(() => setStatus('idle'), [])
 
-  return { status, start, stop, finish }
+  return { status, secondsRemaining, start, stop, finish }
 }

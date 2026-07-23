@@ -1,8 +1,24 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
-import { getHistory, getOrCreateActiveSession, getStats, initDb, saveTurn } from './db'
-import { transcribeAndScore } from './ollama'
-import type { SubmitTurnResult } from '../shared/types'
+import {
+  createExamSession,
+  getExamHistory,
+  getHistory,
+  getOrCreateActiveSession,
+  getStats,
+  initDb,
+  saveExamReport,
+  saveExamTurn,
+  saveTurn
+} from './db'
+import { generateExamScript, scoreExamSession, transcribeAndScore, transcribeOnly } from './ollama'
+import type {
+  ExamQaPair,
+  ExamReportRecord,
+  ExamScript,
+  ExamTurnRecord,
+  SubmitTurnResult
+} from '../shared/types'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -55,6 +71,46 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('stats:get', async () => {
     return getStats()
+  })
+
+  ipcMain.handle('exam:start', async (): Promise<{ sessionId: number; script: ExamScript }> => {
+    const script = await generateExamScript()
+    const sessionId = createExamSession(script)
+    return { sessionId, script }
+  })
+
+  ipcMain.handle(
+    'exam:submitAnswer',
+    async (
+      _event,
+      sessionId: number,
+      seq: number,
+      topic: string,
+      question: string,
+      audioArrayBuffer: ArrayBuffer
+    ): Promise<ExamTurnRecord> => {
+      const audioBuffer = Buffer.from(audioArrayBuffer)
+      const transcript = await transcribeOnly(audioBuffer)
+      return saveExamTurn(sessionId, seq, topic, question, transcript)
+    }
+  )
+
+  ipcMain.handle(
+    'exam:finish',
+    async (
+      _event,
+      sessionId: number,
+      qaPairs: ExamQaPair[],
+      representativeAudioArrayBuffer: ArrayBuffer
+    ): Promise<ExamReportRecord> => {
+      const representativeAudio = Buffer.from(representativeAudioArrayBuffer)
+      const report = await scoreExamSession(qaPairs, representativeAudio)
+      return saveExamReport(sessionId, report)
+    }
+  )
+
+  ipcMain.handle('exam:history', async (_event, limit?: number) => {
+    return getExamHistory(limit)
   })
 }
 

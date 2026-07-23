@@ -1,8 +1,8 @@
 const WINDOW_MS = 20
 const RELATIVE_THRESHOLD = 0.1
 const MIN_THRESHOLD = 0.01
-const LEAD_PADDING_MS = 100
-const TRAIL_PADDING_MS = 200
+const LEAD_PADDING_MS = 300
+const TRAIL_PADDING_MS = 800
 
 /**
  * Trims leading/trailing silence - mainly for Bluetooth headsets, where there's a real delay
