@@ -11,7 +11,12 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "postinstall": "electron-builder install-app-deps && node scripts/fix-electron-install.cjs"
+    "postinstall": "electron-builder install-app-deps && node scripts/fix-electron-install.cjs",
+    "dist": "electron-vite build && electron-builder",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "release:linux": "electron-vite build && electron-builder --linux --publish always",
+    "release:win": "electron-vite build && electron-builder --win --publish always"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.8",
@@ -36,5 +41,27 @@
     "electron-winstaller@5.4.0": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true
+  },
+  "build": {
+    "appId": "com.nikitapennie.speech-tutor",
+    "productName": "Speech Tutor",
+    "files": ["out/**/*", "package.json"],
+    "asarUnpack": ["**/*.node"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Education"
+    },
+    "win": {
+      "target": ["portable"]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "nikitapn",
+      "repo": "speech-tutor"
+    }
   }
 }

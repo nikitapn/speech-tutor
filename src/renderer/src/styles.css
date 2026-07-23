@@ -199,6 +199,12 @@ h2 {
   color: var(--text-primary);
 }
 
+.ollama-host-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .hint {
   margin-top: 12px;
   font-size: 13px;

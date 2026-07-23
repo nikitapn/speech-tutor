@@ -17,6 +17,11 @@ const api = {
   getStats: (): Promise<SessionStats> => ipcRenderer.invoke('stats:get'),
   deleteTurn: (id: number): Promise<void> => ipcRenderer.invoke('turn:delete', id),
 
+  getOllamaHost: (): Promise<string> => ipcRenderer.invoke('settings:getOllamaHost'),
+  setOllamaHost: (host: string): Promise<void> => ipcRenderer.invoke('settings:setOllamaHost', host),
+  testOllamaConnection: (hostOverride?: string): Promise<{ ok: boolean; message: string }> =>
+    ipcRenderer.invoke('settings:testOllamaConnection', hostOverride),
+
   examStart: (): Promise<{ sessionId: number; script: ExamScript }> =>
     ipcRenderer.invoke('exam:start'),
   examSubmitAnswer: (

@@ -17,9 +17,11 @@ import {
   generateExamScript,
   generatePart3Question,
   scoreExamSession,
+  testOllamaConnection,
   transcribeAndScore,
   transcribeOnly
 } from './ollama'
+import { getOllamaHost, setOllamaHost } from './settings'
 import type {
   ExamQaPair,
   ExamReportRecord,
@@ -83,6 +85,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('turn:delete', async (_event, id: number) => {
     deleteTurn(id)
+  })
+
+  ipcMain.handle('settings:getOllamaHost', async () => {
+    return getOllamaHost()
+  })
+
+  ipcMain.handle('settings:setOllamaHost', async (_event, host: string) => {
+    setOllamaHost(host)
+  })
+
+  ipcMain.handle('settings:testOllamaConnection', async (_event, hostOverride?: string) => {
+    return testOllamaConnection(hostOverride)
   })
 
   ipcMain.handle('exam:start', async (): Promise<{ sessionId: number; script: ExamScript }> => {

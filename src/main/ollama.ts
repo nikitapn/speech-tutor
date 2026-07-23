@@ -1,6 +1,6 @@
 import type { ExamQaPair, ExamReport, ExamScript, TutorFeedback } from '../shared/types'
+import { getOllamaHost, normalizeHost } from './settings'
 
-const OLLAMA_URL = 'http://localhost:11434/v1/chat/completions'
 const MODEL = 'gemma4:e4b'
 
 const SYSTEM_PROMPT = `You are an English speaking tutor. You will be given a short audio clip of a
@@ -81,7 +81,7 @@ interface ContentPart {
 }
 
 async function chatCompletion(content: string | ContentPart[]): Promise<string> {
-  const res = await fetch(OLLAMA_URL, {
+  const res = await fetch(`${getOllamaHost()}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -98,6 +98,30 @@ async function chatCompletion(content: string | ContentPart[]): Promise<string> 
 
   const data = (await res.json()) as OllamaChatCompletionResponse
   return data.choices[0]?.message.content ?? ''
+}
+
+export async function testOllamaConnection(hostOverride?: string): Promise<{ ok: boolean; message: string }> {
+  const host = hostOverride ? normalizeHost(hostOverride) : getOllamaHost()
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    const res = await fetch(`${host}/api/tags`, { signal: controller.signal })
+    clearTimeout(timeout)
+
+    if (!res.ok) {
+      return { ok: false, message: `Server responded with ${res.status} ${res.statusText}` }
+    }
+
+    const data = (await res.json()) as { models?: { name: string }[] }
+    const hasModel = (data.models ?? []).some((m) => m.name === MODEL || m.name.startsWith(`${MODEL.split(':')[0]}:`))
+    if (!hasModel) {
+      return { ok: true, message: `Connected, but "${MODEL}" was not found in the model list.` }
+    }
+    return { ok: true, message: `Connected - "${MODEL}" is available.` }
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    return { ok: false, message: `Could not reach ${host}: ${reason}` }
+  }
 }
 
 /**
