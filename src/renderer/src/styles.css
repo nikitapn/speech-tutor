@@ -232,6 +232,30 @@ h2 {
   font-weight: 600;
 }
 
+.task-card {
+  margin-top: 8px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.task-card .exam-question {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.task-card-points {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-primary);
+}
+
+.task-card-points li {
+  margin-bottom: 4px;
+}
+
 .feedback {
   margin-top: 24px;
   display: flex;

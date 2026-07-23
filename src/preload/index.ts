@@ -27,6 +27,16 @@ const api = {
     audio: ArrayBuffer
   ): Promise<ExamTurnRecord> =>
     ipcRenderer.invoke('exam:submitAnswer', sessionId, seq, topic, question, audio),
+  examTranscribeChunk: (audio: ArrayBuffer): Promise<string> =>
+    ipcRenderer.invoke('exam:transcribeChunk', audio),
+  examSaveTurn: (
+    sessionId: number,
+    seq: number,
+    topic: string,
+    question: string,
+    transcript: string
+  ): Promise<ExamTurnRecord> =>
+    ipcRenderer.invoke('exam:saveTurn', sessionId, seq, topic, question, transcript),
   examFinish: (
     sessionId: number,
     qaPairs: ExamQaPair[],

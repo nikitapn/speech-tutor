@@ -50,8 +50,15 @@ export interface ExamTopic {
   questions: string[]
 }
 
+export interface Part2TaskCard {
+  topic: string
+  points: string[]
+  roundingOffQuestions: string[]
+}
+
 export interface ExamScript {
   topics: ExamTopic[]
+  part2: Part2TaskCard
 }
 
 export interface ExamQuestionRef {

@@ -38,23 +38,36 @@ Do not correct, clean up, or paraphrase the language.
 
 Respond with ONLY a JSON object, no markdown fences, no commentary: { "transcript": string }`
 
-const EXAM_SCRIPT_PROMPT = `You are an IELTS Speaking examiner preparing questions for Part 1
-(the "Introduction and interview" section of the test).
+const EXAM_SCRIPT_PROMPT = `You are an IELTS Speaking examiner preparing a full test script covering
+Part 1 (the "Introduction and interview" section) and Part 2 (the "Individual long turn" section).
 
-Generate a fresh, natural set of Part 1 questions in the authentic IELTS style. Produce exactly 2
-topic groups from everyday, familiar subjects (e.g. hometown, family, work, studies, hobbies, daily
-routine, food, free time, technology, travel, weather, shopping - pick 2 different ones each time,
-varied rather than always defaulting to the same pair). For each topic group write:
+For Part 1: generate a fresh, natural set of questions in the authentic IELTS style. Produce
+exactly 2 topic groups from everyday, familiar subjects (e.g. hometown, family, work, studies,
+hobbies, daily routine, food, free time, technology, travel, weather, shopping - pick 2 different
+ones each time, varied rather than always defaulting to the same pair). For each topic group write:
 - a short, natural transition sentence introducing the topic, in the examiner's voice (e.g.
   "Let's talk about your hometown.")
 - exactly 4 follow-up questions, in the direct, conversational style a real IELTS examiner uses
+
+For Part 2: generate one task card in the authentic IELTS style (e.g. "Describe something you own
+which is very important to you."). Give:
+- the topic/prompt sentence
+- exactly 3 "you should say" points the candidate should cover (short phrases, not full sentences,
+  e.g. "where you got it from", "how long you have had it", "what you use it for")
+- exactly 2 short "rounding off" follow-up questions the examiner asks after the candidate finishes
+  speaking, related to the same topic (e.g. "Is it valuable in terms of money?")
 
 Respond with ONLY a JSON object matching this exact shape, no markdown fences, no commentary:
 {
   "topics": [
     { "topic": string, "intro": string, "questions": [string, string, string, string] },
     { "topic": string, "intro": string, "questions": [string, string, string, string] }
-  ]
+  ],
+  "part2": {
+    "topic": string,
+    "points": [string, string, string],
+    "roundingOffQuestions": [string, string]
+  }
 }`
 
 interface OllamaChatCompletionResponse {
@@ -140,6 +153,9 @@ export async function generateExamScript(): Promise<ExamScript> {
   if (!Array.isArray(parsed.topics) || parsed.topics.length === 0) {
     throw new Error('generateExamScript: model did not return any topics')
   }
+  if (!parsed.part2 || !Array.isArray(parsed.part2.points) || !Array.isArray(parsed.part2.roundingOffQuestions)) {
+    throw new Error('generateExamScript: model did not return a valid Part 2 task card')
+  }
 
   return parsed
 }
@@ -158,8 +174,9 @@ export async function scoreExamSession(
     .map((qa) => `Examiner: ${qa.question}\nCandidate: ${qa.transcript}`)
     .join('\n\n')
 
-  const prompt = `You are an IELTS Speaking examiner. Below is the full transcript of a Part 1
-"Introduction and interview" session between an examiner and a candidate. Score the candidate's
+  const prompt = `You are an IELTS Speaking examiner. Below is the full transcript of a Speaking
+test session between an examiner and a candidate, covering Part 1 (introduction and interview) and
+Part 2 (individual long turn plus rounding-off questions). Score the candidate's overall
 performance using the official IELTS Speaking band descriptors, across these four criteria:
 - Fluency and coherence
 - Lexical resource

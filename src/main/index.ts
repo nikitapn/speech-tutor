@@ -101,6 +101,25 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle('exam:transcribeChunk', async (_event, audioArrayBuffer: ArrayBuffer): Promise<string> => {
+    const audioBuffer = Buffer.from(audioArrayBuffer)
+    return transcribeOnly(audioBuffer)
+  })
+
+  ipcMain.handle(
+    'exam:saveTurn',
+    async (
+      _event,
+      sessionId: number,
+      seq: number,
+      topic: string,
+      question: string,
+      transcript: string
+    ): Promise<ExamTurnRecord> => {
+      return saveExamTurn(sessionId, seq, topic, question, transcript)
+    }
+  )
+
   ipcMain.handle(
     'exam:finish',
     async (
