@@ -1,6 +1,6 @@
 import type { TutorFeedback } from '../shared/types'
 
-const OLLAMA_URL = 'http://localhost:11434/api/generate'
+const OLLAMA_URL = 'http://localhost:11434/v1/chat/completions'
 const MODEL = 'gemma4:e4b'
 
 const SYSTEM_PROMPT = `You are an English speaking tutor. You will be given a short audio clip of a
@@ -15,6 +15,10 @@ student speaking. Do the following:
 5. Score vocabulary range/richness from 1-10 (10 = varied, precise, natural vocabulary for the context).
 6. Give one or two sentences of fluency/tone notes (pacing, hesitation, register).
 7. Give an overall score from 1-10.
+8. Guess the speaker's accent/regional variety of English from pronunciation alone (e.g. "American
+   English", "British English", "Indian English", "Australian English"). This is inherently
+   uncertain from a short clip - give your best single guess as a short label, not a paragraph. If
+   there truly isn't enough signal, say "Unclear".
 
 Respond with ONLY a JSON object matching this exact shape, no markdown fences, no commentary:
 {
@@ -24,29 +28,45 @@ Respond with ONLY a JSON object matching this exact shape, no markdown fences, n
   "grammar_score": number,
   "vocabulary_score": number,
   "fluency_notes": string,
-  "overall_score": number
+  "overall_score": number,
+  "accent": string
 }`
 
 /**
- * Confirmed against the local Ollama server: audio goes in the same top-level "images": string[]
- * field used for vision models (base64, no data URI prefix). Ollama's media loader only accepts
- * formats it can decode itself - webm/opus (what the browser's MediaRecorder produces) fails with
- * "Failed to load image or audio file"; a plain WAV (PCM) works. The renderer captures raw PCM via
- * the Web Audio API and encodes it to WAV itself (src/renderer/src/lib/wav.ts) rather than sending
- * MediaRecorder output, specifically to match this.
+ * Uses Ollama's OpenAI-compatible endpoint with a proper "input_audio" content part (audio goes
+ * in as base64 with an explicit format, not stuffed into the generic vision-model "images" field).
+ * This matters beyond just being the more correct API shape: gemma4 has a "thinking" capability,
+ * and this endpoint returns that reasoning in a separate `message.reasoning` field instead of
+ * mixing it into the answer - forcing an immediate structured JSON reply without room to "think"
+ * first (which is what /api/generate + format:"json" effectively does) measurably made the model
+ * silently normalize the transcript before scoring it, which meant grammar mistakes were graded
+ * against an already-corrected transcript (falsely high scores). Confirmed via direct comparison:
+ * this endpoint preserved an intentional tense mistake in testing and scored it correctly (3/10),
+ * where /api/generate consistently corrected the mistake in the transcript itself and scored 9-10/10.
+ * Note: Ollama's native /api/chat with an "images" field does NOT work for audio on this model
+ * ("I could not find the specified audio") - it has to be this endpoint with this content shape.
  */
 function buildRequestBody(audioBase64: string): Record<string, unknown> {
   return {
     model: MODEL,
-    prompt: SYSTEM_PROMPT,
-    images: [audioBase64],
-    format: 'json',
-    stream: false
+    options: {
+      num_ctx: 8192
+    },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: SYSTEM_PROMPT },
+          { type: 'input_audio', input_audio: { data: audioBase64, format: 'wav' } }
+        ]
+      }
+    ],
+    response_format: { type: 'json_object' }
   }
 }
 
-interface OllamaGenerateResponse {
-  response: string
+interface OllamaChatCompletionResponse {
+  choices: { message: { content: string } }[]
 }
 
 export async function transcribeAndScore(audioBuffer: Buffer): Promise<TutorFeedback> {
@@ -62,13 +82,14 @@ export async function transcribeAndScore(audioBuffer: Buffer): Promise<TutorFeed
     throw new Error(`Ollama request failed: ${res.status} ${res.statusText} - ${await res.text()}`)
   }
 
-  const data = (await res.json()) as OllamaGenerateResponse
+  const data = (await res.json()) as OllamaChatCompletionResponse
+  const content = data.choices[0]?.message.content ?? ''
 
   let parsed: TutorFeedback
   try {
-    parsed = JSON.parse(data.response) as TutorFeedback
+    parsed = JSON.parse(content) as TutorFeedback
   } catch {
-    throw new Error(`Model did not return valid JSON: ${data.response.slice(0, 500)}`)
+    throw new Error(`Model did not return valid JSON: ${content.slice(0, 500)}`)
   }
 
   return normalizeFeedback(parsed)
@@ -88,6 +109,7 @@ function normalizeFeedback(raw: TutorFeedback): TutorFeedback {
     grammar_score: clamp(raw.grammar_score),
     vocabulary_score: clamp(raw.vocabulary_score),
     fluency_notes: raw.fluency_notes ?? '',
-    overall_score: clamp(raw.overall_score)
+    overall_score: clamp(raw.overall_score),
+    accent: raw.accent || 'Unclear'
   }
 }

@@ -20,6 +20,7 @@ export default function History() {
               <span className="value">{turn.overall_score.toFixed(1)}</span>
             </div>
             <p>{turn.transcript}</p>
+            <span className="accent-tag">{turn.accent}</span>
           </li>
         ))}
       </ul>

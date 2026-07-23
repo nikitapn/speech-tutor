@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SubmitTurnResult } from '../../../shared/types'
 import { useRecorder } from '../lib/useRecorder'
 
@@ -6,6 +6,14 @@ export default function Practice() {
   const { status, start, stop, finish } = useRecorder()
   const [result, setResult] = useState<SubmitTurnResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const audioUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+    }
+  }, [])
 
   async function handleRecordClick(): Promise<void> {
     setError(null)
@@ -21,6 +29,12 @@ export default function Practice() {
     if (status === 'recording') {
       try {
         const audio = await stop()
+
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+        const url = URL.createObjectURL(new Blob([audio], { type: 'audio/wav' }))
+        audioUrlRef.current = url
+        setAudioUrl(url)
+
         const res = await window.api.submitTurn(audio)
         setResult(res)
       } catch (err) {
@@ -46,8 +60,19 @@ export default function Practice() {
 
       {error && <p className="error">{error}</p>}
 
+      {audioUrl && (
+        <div className="playback">
+          <h2>Your recording</h2>
+          <audio controls src={audioUrl} />
+        </div>
+      )}
+
       {result && (
         <div className="feedback">
+          <div className="accent-badge">
+            Detected accent: <strong>{result.feedback.accent}</strong>
+          </div>
+
           <section>
             <h2>Transcript</h2>
             <p>{result.feedback.transcript}</p>

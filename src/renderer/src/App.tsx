@@ -2,8 +2,9 @@ import { useState } from 'react'
 import Practice from './components/Practice'
 import History from './components/History'
 import Progress from './components/Progress'
+import Settings from './components/Settings'
 
-type Tab = 'practice' | 'history' | 'progress'
+type Tab = 'practice' | 'history' | 'progress' | 'settings'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('practice')
@@ -20,12 +21,16 @@ export default function App() {
         <button className={tab === 'progress' ? 'active' : ''} onClick={() => setTab('progress')}>
           Progress
         </button>
+        <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
+          Settings
+        </button>
       </nav>
 
       <main>
         {tab === 'practice' && <Practice />}
         {tab === 'history' && <History />}
         {tab === 'progress' && <Progress />}
+        {tab === 'settings' && <Settings />}
       </main>
     </div>
   )

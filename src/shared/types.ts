@@ -13,6 +13,7 @@ export interface TutorFeedback {
   vocabulary_score: number
   fluency_notes: string
   overall_score: number
+  accent: string
 }
 
 export interface TurnRecord {
@@ -25,6 +26,7 @@ export interface TurnRecord {
   grammar_score: number
   vocabulary_score: number
   overall_score: number
+  accent: string
   created_at: string
 }
 

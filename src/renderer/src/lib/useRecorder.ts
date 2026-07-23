@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { getStoredDeviceId } from './audioDevices'
 import { encodeWav } from './wav'
 
 export type RecorderStatus = 'idle' | 'recording' | 'processing'
@@ -15,11 +16,26 @@ export function useRecorder(): {
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const silentGainRef = useRef<GainNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Float32Array[]>([])
 
   const start = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // Chromium enables WebRTC-style echo cancellation/auto-gain/noise-suppression by default for
+    // any getUserMedia audio track. Those are built for voice calls and actively distort the
+    // signal (adaptive gain pumping, spectral suppression) - measurably so (confirmed: a captured
+    // clip correlated only ~0.8 against a clean reference of identical source audio, with visibly
+    // inflated RMS). Gemma's own audio guidance wants an unmodified waveform, so all three are
+    // turned off here for the rawest possible capture.
+    const deviceId = getStoredDeviceId()
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    })
     streamRef.current = stream
     chunksRef.current = []
 
@@ -28,6 +44,11 @@ export function useRecorder(): {
     // on any external transcoder (e.g. ffmpeg) being installed on the user's machine.
     const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
     audioContextRef.current = audioContext
+    // AudioContexts can come up 'suspended' - by the time getUserMedia's permission prompt
+    // resolves, the synchronous user-gesture window from the click has often already closed, so
+    // this doesn't reliably auto-start. Without an explicit resume(), onaudioprocess never fires
+    // and the "recording" is silently empty (no error, just a zero-length WAV with no duration).
+    await audioContext.resume()
 
     const source = audioContext.createMediaStreamSource(stream)
     sourceRef.current = source
@@ -38,13 +59,23 @@ export function useRecorder(): {
     }
     processorRef.current = processor
 
+    // ScriptProcessorNode only fires onaudioprocess while connected through to a live
+    // destination, but connecting straight to audioContext.destination plays the mic back out the
+    // speakers live while recording. Routing through a zero-gain node keeps the graph "pulled"
+    // (satisfying that requirement) without any audible monitoring/feedback loop.
+    const silentGain = audioContext.createGain()
+    silentGain.gain.value = 0
+    silentGainRef.current = silentGain
+
     source.connect(processor)
-    processor.connect(audioContext.destination)
+    processor.connect(silentGain)
+    silentGain.connect(audioContext.destination)
     setStatus('recording')
   }, [])
 
   const stop = useCallback(async (): Promise<ArrayBuffer> => {
     processorRef.current?.disconnect()
+    silentGainRef.current?.disconnect()
     sourceRef.current?.disconnect()
     streamRef.current?.getTracks().forEach((track) => track.stop())
 
@@ -54,6 +85,10 @@ export function useRecorder(): {
     setStatus('processing')
 
     const totalLength = chunksRef.current.reduce((sum, chunk) => sum + chunk.length, 0)
+    if (totalLength === 0) {
+      throw new Error('No audio was captured - check your microphone input and try again.')
+    }
+
     const merged = new Float32Array(totalLength)
     let offset = 0
     for (const chunk of chunksRef.current) {

@@ -37,6 +37,11 @@ export function initDb(): void {
       detail TEXT NOT NULL
     );
   `)
+
+  const turnColumns = db.prepare("PRAGMA table_info(turns)").all() as { name: string }[]
+  if (!turnColumns.some((col) => col.name === 'accent')) {
+    db.exec(`ALTER TABLE turns ADD COLUMN accent TEXT NOT NULL DEFAULT 'Unclear'`)
+  }
 }
 
 export function getOrCreateActiveSession(language = 'en'): number {
@@ -57,8 +62,8 @@ export function saveTurn(sessionId: number, feedback: TutorFeedback): TurnRecord
 
   const insert = db.prepare(`
     INSERT INTO turns
-      (session_id, seq, transcript, corrected_transcript, feedback_json, grammar_score, vocabulary_score, overall_score)
-    VALUES (@session_id, @seq, @transcript, @corrected_transcript, @feedback_json, @grammar_score, @vocabulary_score, @overall_score)
+      (session_id, seq, transcript, corrected_transcript, feedback_json, grammar_score, vocabulary_score, overall_score, accent)
+    VALUES (@session_id, @seq, @transcript, @corrected_transcript, @feedback_json, @grammar_score, @vocabulary_score, @overall_score, @accent)
   `)
 
   const result = insert.run({
@@ -69,7 +74,8 @@ export function saveTurn(sessionId: number, feedback: TutorFeedback): TurnRecord
     feedback_json: JSON.stringify(feedback),
     grammar_score: feedback.grammar_score,
     vocabulary_score: feedback.vocabulary_score,
-    overall_score: feedback.overall_score
+    overall_score: feedback.overall_score,
+    accent: feedback.accent
   })
 
   const turnId = Number(result.lastInsertRowid)
